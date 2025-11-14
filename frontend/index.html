@@ -2,6 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta
+      name="google-signin-client_id"
+      content="YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Invoice Management</title>
     <style>
@@ -48,6 +51,17 @@
         text-align: center;
       }
 
+      .login-divider {
+        margin: 20px 0;
+        border-bottom: 1px solid var(--border-color);
+        line-height: 0.1em;
+        text-align: center;
+      }
+      .login-divider span {
+        background: var(--white-color);
+        padding: 0 10px;
+        color: #aaa;
+      }
       h1,
       h2 {
         color: var(--primary-color);
@@ -245,6 +259,63 @@
           grid-column: span 1;
         }
       }
+
+      /* Modal styles */
+      .modal {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        overflow: auto;
+        background-color: rgba(0, 0, 0, 0.4);
+        padding-top: 60px;
+      }
+
+      .modal-content {
+        background-color: #fefefe;
+        margin: 5% auto;
+        padding: 20px;
+        border: 1px solid #888;
+        width: 80%;
+        max-width: 500px;
+        border-radius: 8px;
+      }
+
+      .modal-content .card {
+        padding: 0;
+        box-shadow: none;
+      }
+
+      .close-btn {
+        color: #aaa;
+        float: right;
+        font-size: 28px;
+        font-weight: bold;
+      }
+
+      .close-btn:hover,
+      .close-btn:focus {
+        color: black;
+        text-decoration: none;
+        cursor: pointer;
+      }
+
+      #camera-view {
+        width: 100%;
+        max-width: 460px;
+        border-radius: 4px;
+        margin-bottom: 15px;
+      }
+
+      .modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-top: 20px;
+      }
     </style>
   </head>
   <body>
@@ -258,6 +329,14 @@
             <input type="text" id="username" required />
           </div>
           <button type="submit" class="btn btn-primary">Login</button>
+          <div class="login-divider"><span>OR</span></div>
+          <button
+            type="button"
+            id="google-signin-btn"
+            class="btn"
+            style="background-color: #4285f4; color: white">
+            Sign in with Google
+          </button>
         </form>
       </div>
     </div>
@@ -285,6 +364,31 @@
             <button type="submit" class="btn btn-primary">
               Upload & Process
             </button>
+            <div class="login-divider" style="margin-top: 20px">
+              <span>OR</span>
+            </div>
+            <button
+              type="button"
+              id="capture-btn"
+              class="btn btn-secondary"
+              style="width: 100%; padding: 12px 20px; font-size: 1em">
+              Capture from Camera
+            </button>
+          </form>
+        </section>
+
+        <section id="export-section" class="card">
+          <h2>Export Invoices</h2>
+          <form id="export-form">
+            <div class="form-group">
+              <label for="start-date">Start Date</label
+              ><input type="date" id="start-date" required />
+            </div>
+            <div class="form-group">
+              <label for="end-date">End Date</label
+              ><input type="date" id="end-date" required />
+            </div>
+            <button type="submit" class="btn btn-primary">Download CSV</button>
           </form>
         </section>
 
@@ -313,6 +417,53 @@
       </div>
     </div>
 
+    <!-- Edit Invoice Modal -->
+    <div id="edit-invoice-modal" class="modal">
+      <div class="modal-content">
+        <span class="close-btn" id="edit-modal-close">&times;</span>
+        <div class="card">
+          <h2>Review Invoice</h2>
+          <p>Please review the extracted details and save.</p>
+          <form id="edit-invoice-form">
+            <input type="hidden" id="edit-file-name" />
+            <input type="hidden" id="edit-storage-key" />
+            <div class="form-group">
+              <label for="edit-category">Category</label>
+              <input type="text" id="edit-category" required />
+            </div>
+            <div class="form-group">
+              <label for="edit-amount">Amount (Rs)</label>
+              <input type="text" id="edit-amount" required />
+            </div>
+            <div class="form-group">
+              <label for="edit-extracted-text">Extracted Text</label>
+              <textarea id="edit-extracted-text" rows="6" style="width: 100%; font-family: monospace;"></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary">Save Invoice</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Camera Modal -->
+    <div id="camera-modal" class="modal">
+      <div class="modal-content">
+        <span class="close-btn" id="camera-modal-close">&times;</span>
+        <h2>Capture Invoice</h2>
+        <video id="camera-view" autoplay playsinline></video>
+        <div class="modal-actions">
+          <button id="capture-image-btn" class="btn btn-primary">
+            Capture
+          </button>
+          <button
+            id="cancel-capture-btn"
+            class="btn btn-secondary"
+            style="width: auto">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
     <script>
       const API_BASE_URL = "http://localhost:8000";
 
@@ -326,6 +477,20 @@
       const invoiceFile = document.getElementById("invoice-file");
       const invoiceList = document.getElementById("invoice-list");
       const messageBox = document.getElementById("message-box");
+
+      // New elements
+      const captureBtn = document.getElementById("capture-btn");
+      const cameraModal = document.getElementById("camera-modal");
+      const cameraModalClose = document.getElementById("camera-modal-close");
+      const cameraView = document.getElementById("camera-view");
+      const captureImageBtn = document.getElementById("capture-image-btn");
+      const cancelCaptureBtn = document.getElementById("cancel-capture-btn");
+      const editInvoiceModal = document.getElementById("edit-invoice-modal");
+      const editModalClose = document.getElementById("edit-modal-close");
+      const editInvoiceForm = document.getElementById("edit-invoice-form");
+      const exportForm = document.getElementById("export-form");
+      let cameraStream = null;
+      let capturedBlob = null;
 
       // Stats elements
       const totalInvoicesEl = document.getElementById("total-invoices");
@@ -345,7 +510,9 @@
 
       async function fetchInvoices(username) {
         try {
-          const response = await fetch(`/api/invoices/${username}`);
+          const response = await fetch(
+            `${API_BASE_URL}/api/invoices/${username}`
+          );
           if (!response.ok) throw new Error("Failed to fetch invoices.");
           const data = await response.json();
           renderInvoices(data.invoices);
@@ -356,7 +523,7 @@
 
       async function fetchStats(username) {
         try {
-          const response = await fetch(`/api/stats/${username}`);
+          const response = await fetch(`${API_BASE_URL}/api/stats/${username}`);
           if (!response.ok) throw new Error("Failed to fetch stats.");
           const stats = await response.json();
 
@@ -369,7 +536,9 @@
               const li = document.createElement("li");
               li.innerHTML = `<span>${cat.category} (${
                 cat.count
-              })</span> <strong>$${parseFloat(cat.total).toFixed(2)}</strong>`;
+              })</span> <strong>Rs ${parseFloat(cat.total).toFixed(
+                2
+              )}</strong>`;
               statsListEl.appendChild(li);
             });
           } else {
@@ -400,7 +569,7 @@
                         } &bull; Uploaded: ${uploadDate}</span>
                     </div>
                     <div class="invoice-actions">
-                        <span class="invoice-amount">$${parseFloat(
+                        <span class="invoice-amount">Rs ${parseFloat(
                           invoice.amount
                         ).toFixed(2)}</span>
                         <button class="btn-secondary btn-download" data-id="${
@@ -436,6 +605,7 @@
         totalAmountEl.textContent = "0.00";
         messageBox.style.display = "none";
         messageBox.textContent = "";
+        exportForm.reset();
         uploadForm.reset();
       }
 
@@ -457,18 +627,44 @@
         }
       });
 
+      document
+        .getElementById("google-signin-btn")
+        .addEventListener("click", async () => {
+          try {
+            const response = await fetch(
+              `${API_BASE_URL}/api/google-consent-url`
+            );
+            if (!response.ok) {
+              const errorData = await response.json();
+              throw new Error(
+                errorData.detail || "Could not get Google consent URL."
+              );
+            }
+            const data = await response.json();
+            if (data.consent_url) {
+              window.location.href = data.consent_url;
+            }
+          } catch (error) {
+            showMessage(error.message, "error");
+          }
+        });
+
       logoutBtn.addEventListener("click", logout);
 
       uploadForm.addEventListener("submit", async (e) => {
         e.preventDefault();
-        if (!invoiceFile.files[0]) {
+        const file = invoiceFile.files[0];
+        if (!file) {
           showMessage("Please select a file to upload.", "error");
           return;
         }
+        await processAndUploadFile(file);
+      });
 
+      async function processAndUploadFile(file) {
         const formData = new FormData();
         formData.append("user_name", currentUser);
-        formData.append("file", invoiceFile.files[0]);
+        formData.append("file", file, file.name || "capture.jpg");
 
         const submitButton = uploadForm.querySelector('button[type="submit"]');
         submitButton.disabled = true;
@@ -481,21 +677,69 @@
           });
           const result = await response.json();
           if (!response.ok) {
-            throw new Error(result.detail || "Upload failed.");
+            throw new Error(result.detail || "Processing failed.");
           }
-          showMessage(
-            `Invoice uploaded! Category: ${result.category}, Amount: $${result.amount}`
-          );
-          uploadForm.reset();
-          fetchInvoices(currentUser);
-          fetchStats(currentUser);
+          showEditModal(result);
         } catch (error) {
           showMessage(error.message, "error");
         } finally {
           submitButton.disabled = false;
           submitButton.textContent = "Upload & Process";
         }
+      }
+
+      function showEditModal(data) {
+        document.getElementById("edit-file-name").value = data.file_name;
+        document.getElementById("edit-storage-key").value = data.storage_key;
+        document.getElementById("edit-category").value = data.category || "";
+        document.getElementById("edit-amount").value = data.amount
+          ? parseFloat(data.amount).toFixed(2)
+          : "";
+        document.getElementById("edit-extracted-text").value =
+          data.extracted_text || "No text could be extracted.";
+        editInvoiceModal.style.display = "block";
+      }
+
+      editModalClose.onclick = () => {
+        editInvoiceModal.style.display = "none";
+      };
+
+      editInvoiceForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const payload = {
+          user_name: currentUser,
+          file_name: document.getElementById("edit-file-name").value,
+          storage_key: document.getElementById("edit-storage-key").value,
+          category: document.getElementById("edit-category").value,
+          amount: parseFloat(document.getElementById("edit-amount").value),
+          extracted_text: document.getElementById("edit-extracted-text").value,
+        };
+
+        try {
+          const response = await fetch(`${API_BASE_URL}/api/invoices`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const result = await response.json();
+          if (!response.ok) {
+            throw new Error(result.detail || "Failed to save invoice.");
+          }
+          showMessage("Invoice saved successfully!");
+          editInvoiceModal.style.display = "none";
+          uploadForm.reset();
+          fetchInvoices(currentUser);
+          fetchStats(currentUser);
+        } catch (error) {
+          showMessage(error.message, "error");
+        }
       });
+
+      window.onclick = (event) => {
+        if (event.target == editInvoiceModal)
+          editInvoiceModal.style.display = "none";
+        if (event.target == cameraModal) stopCamera();
+      };
 
       invoiceList.addEventListener("click", async (e) => {
         if (e.target.classList.contains("btn-danger")) {
@@ -503,7 +747,7 @@
           if (confirm("Are you sure you want to delete this invoice?")) {
             try {
               const response = await fetch(
-                `/api/invoice/${invoiceId}`,
+                `${API_BASE_URL}/api/invoice/${invoiceId}`,
                 {
                   method: "DELETE",
                 }
@@ -524,7 +768,7 @@
           e.target.textContent = "Preparing...";
           try {
             const response = await fetch(
-              `/api/invoice/${invoiceId}/download`
+              `${API_BASE_URL}/api/invoice/${invoiceId}/download`
             );
             const { download_url, file_name } = await response.json();
             if (!response.ok)
@@ -545,9 +789,101 @@
         }
       });
 
+      // Camera functionality
+      captureBtn.addEventListener("click", async () => {
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          try {
+            cameraStream = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: "environment" },
+            });
+            cameraView.srcObject = cameraStream;
+            cameraModal.style.display = "block";
+          } catch (error) {
+            showMessage(
+              "Could not access the camera. Please check permissions.",
+              "error"
+            );
+            console.error("Error accessing camera: ", error);
+          }
+        } else {
+          showMessage("Your browser does not support camera access.", "error");
+        }
+      });
+
+      function stopCamera() {
+        if (cameraStream) {
+          cameraStream.getTracks().forEach((track) => track.stop());
+        }
+        cameraModal.style.display = "none";
+        cameraView.srcObject = null;
+      }
+
+      cameraModalClose.onclick = stopCamera;
+      cancelCaptureBtn.onclick = stopCamera;
+
+      captureImageBtn.addEventListener("click", () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = cameraView.videoWidth;
+        canvas.height = cameraView.videoHeight;
+        canvas
+          .getContext("2d")
+          .drawImage(cameraView, 0, 0, canvas.width, canvas.height);
+        stopCamera();
+        canvas.toBlob(async (blob) => {
+          capturedBlob = blob;
+          await processAndUploadFile(capturedBlob);
+        }, "image/jpeg");
+      });
+
+      // Export functionality
+      exportForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const startDate = document.getElementById("start-date").value;
+        const endDate = document.getElementById("end-date").value;
+
+        if (!startDate || !endDate) {
+          showMessage("Please select both a start and end date.", "error");
+          return;
+        }
+
+        const url = `${API_BASE_URL}/api/export/csv?user_name=${currentUser}&start_date=${startDate}&end_date=${endDate}`;
+
+        try {
+          const response = await fetch(url);
+          if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.detail || "Failed to generate CSV.");
+          }
+          const blob = await response.blob();
+          const downloadUrl = window.URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.style.display = "none";
+          a.href = downloadUrl;
+          a.download = `invoices_${currentUser}_${startDate}_to_${endDate}.csv`;
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(downloadUrl);
+          a.remove();
+        } catch (error) {
+          showMessage(error.message, "error");
+        }
+      });
+
+      function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(";").shift();
+      }
+
       // Check for saved user on page load
-      const savedUser = localStorage.getItem("invoice_user");
+      let savedUser = localStorage.getItem("invoice_user");
+      if (!savedUser) {
+        savedUser = getCookie("invoice_user");
+      }
+
       if (savedUser) {
+        document.cookie =
+          "invoice_user=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;"; // Clear cookie after reading
         login(savedUser);
       }
     </script>

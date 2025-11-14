@@ -1,7 +1,7 @@
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.requests import Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from google.cloud import storage
 # from google.oauth2 import service_account
 # import psycopg2
@@ -11,13 +11,15 @@ from psycopg2.extras import RealDictCursor
 import uuid
 import json
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import io
 import os
+import requests
 from db import execute_query, fetch_query_results
 from contextlib import contextmanager
 import logging
+from pydantic import BaseModel
 import shutil
 from fastapi.templating import Jinja2Templates
 
@@ -184,7 +186,7 @@ async def upload_invoice(
         
         # Store metadata in database
         await execute_query(
-            "INSERT INTO users (name) VALUES (%s) ON CONFLICT (name) DO NOTHING",
+            "INSERT INTO users (name, created_at) VALUES (%s, %s) ON CONFLICT (name) DO NOTHING",
             [user_name]
         )
         
@@ -203,7 +205,9 @@ async def upload_invoice(
             "invoice_id": invoice_id,
             "category": category,
             "amount": amount,
+            "file_name": file.filename,
             "storage_key": storage_key,
+            "extracted_text": extracted_data,
             "message": "Invoice uploaded and categorized successfully"
         })
         
@@ -229,6 +233,35 @@ async def get_user_invoices(user_name: str):
 async def get_categories():
     return JSONResponse({"categories": list(CATEGORIES.keys())})
 
+class InvoiceUpdateRequest(BaseModel):
+    user_name: str
+    file_name: str
+    storage_key: str
+    category: str
+    amount: float
+    extracted_text: Optional[str] = None
+
+@app.post("/api/invoices")
+async def save_invoice_details(invoice_data: InvoiceUpdateRequest):
+    """
+    Updates an invoice with user-confirmed details and marks it as 'confirmed'.
+    """
+    try:
+        # The storage_key is unique per upload, so we use it to find the correct invoice.
+        result = await execute_query("""
+            UPDATE invoices 
+            SET category = %s, amount = %s, extracted_text = %s
+            WHERE storage_key = %s AND user_name ~~* %s
+            RETURNING id;
+        """, [
+            invoice_data.category, invoice_data.amount, invoice_data.extracted_text,
+            invoice_data.storage_key, f"%{invoice_data.user_name}%"
+        ])
+        print(f"Update result: {result}")
+        return JSONResponse({"success": True, "message": "Invoice saved successfully."})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.put("/api/invoice/{invoice_id}/category")
 async def update_category(invoice_id: str, category: str = Form(...)):
     try:
@@ -248,15 +281,15 @@ async def get_user_stats(user_name: str):
         # Category breakdown
         category_stats  = await fetch_query_results("""
             SELECT category, COUNT(*) as count, COALESCE(SUM(amount::numeric), 0) as total
-            FROM invoices 
-            WHERE user_name = %s 
+            FROM invoices
+            WHERE user_name = %s
             GROUP BY category
         """, [user_name])
         
         # Total stats
         total_stats_list = await fetch_query_results("""
             SELECT COUNT(*) as count, COALESCE(SUM(amount::numeric), 0) as total
-            FROM invoices 
+            FROM invoices
             WHERE user_name = %s
         """, (user_name,))
         total_row = total_stats_list[0] if total_stats_list else {'count': 0, 'total': 0}
@@ -352,6 +385,74 @@ async def delete_invoice(invoice_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/google-consent-url")
+async def google_consent_url():
+    try:
+        redirect_uri = 'http://127.0.0.1:8000/api/google-callback'
+        # Generate Google OAuth2 consent URL
+        from google_auth_oauthlib.flow import Flow
+
+        flow = Flow.from_client_secrets_file(
+            'client_secret_google.json',
+            scopes=['https://www.googleapis.com/auth/cloud-platform', "https://www.googleapis.com/auth/userinfo.profile"],
+            redirect_uri=redirect_uri
+        )
+
+        authorization_url, state = flow.authorization_url(
+            access_type='offline',
+            include_granted_scopes='true'
+        )
+
+        return JSONResponse({"consent_url": authorization_url})
+    except Exception as e:
+        logger.error(f"Error generating Google consent URL: {e}")
+        raise HTTPException(status_code=500, detail="Could not generate consent URL.")
+    
+from google_auth_oauthlib.flow import Flow
+@app.get("/api/google-callback")
+async def google_callback(request: Request):
+    try:
+        
+        # print(f"Google Callback Data: {json.dumps(request)}")
+        data = request.query_params
+        print(f"Google Callback Data:", data)
+        redirect_uri = 'http://127.0.0.1:8000/api/google-callback'
+        flow = Flow.from_client_secrets_file(
+            'client_secret_google.json',
+            scopes=['https://www.googleapis.com/auth/cloud-platform', "https://www.googleapis.com/auth/userinfo.profile"],
+            state=data.get('state'))
+        flow.redirect_uri = redirect_uri
+
+        authorization_response = str(request.url)
+        flow.fetch_token(authorization_response=authorization_response)
+
+        # Store the credentials in browser session storage, but for security: client_id, client_secret,
+        # and token_uri are instead stored only on the backend server.
+        credentials = flow.credentials
+
+        # Use the access token to get user info
+        userinfo_response = requests.get(
+            "https://www.googleapis.com/oauth2/v1/userinfo?alt=json",
+            headers={"Authorization": f"Bearer {credentials.token}"}
+        )
+        userinfo_response.raise_for_status()  # Raise an exception for bad status codes
+        user_info = userinfo_response.json()
+
+        # Upsert user data into the database
+        # This will insert a new user or update an existing one based on the email.
+        await execute_query(
+            """
+            INSERT INTO users (id,google_id, email, name, given_name, family_name, picture_url)
+            VALUES (%s, %s, %s, %s, %s, %s, %s);
+            """,
+            (str(uuid.uuid4()),user_info.get('id'), user_info.get('email'), user_info.get('name'), user_info.get('given_name'), user_info.get('family_name'), user_info.get('picture'))
+        )
+        response = RedirectResponse(url="/")
+        response.set_cookie(key="invoice_user", value=user_info.get('name'), httponly=False, max_age=3600, samesite='lax')
+        return response
+    except Exception as e:
+        logger.error(f"Error in Google callback: {e}")
+        raise HTTPException(status_code=500, detail="Error processing callback.")
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
