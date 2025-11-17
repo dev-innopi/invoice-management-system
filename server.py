@@ -11,7 +11,7 @@ from psycopg2.extras import RealDictCursor
 import uuid
 import json
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 from typing import Optional
 import io
 import os
@@ -20,6 +20,7 @@ from db import execute_query, fetch_query_results
 from contextlib import contextmanager
 import logging
 from pydantic import BaseModel
+import csv
 import shutil
 from fastapi.templating import Jinja2Templates
 
@@ -396,6 +397,44 @@ async def get_users():
         logger.error(f"Error fetching users: {e}")
         raise HTTPException(status_code=500, detail="Could not fetch users.")
 
+@app.get("/api/export/csv")
+async def export_invoices_to_csv(
+    user_name: str,
+    start_date: date,
+    end_date: date
+):
+    """
+    Exports invoice data for a user within a date range to a CSV file.
+    """
+    try:
+        # Adjust end_date to be inclusive for the entire day
+        end_date_inclusive = end_date + timedelta(days=1)
+
+        invoices = await fetch_query_results("""
+            SELECT id, file_name, category, amount, upload_date, extracted_text
+            FROM invoices 
+            WHERE user_name = %s AND upload_date >= %s AND upload_date < %s
+            ORDER BY upload_date DESC
+        """, [user_name, start_date, end_date_inclusive])
+
+        if not invoices:
+            return JSONResponse(
+                status_code=404,
+                content={"message": "No invoices found for the selected criteria."}
+            )
+
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=invoices[0].keys())
+        writer.writeheader()
+        writer.writerows(invoices)
+
+        csv_content = output.getvalue()
+        output.close()
+
+        return Response(content=csv_content, media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=invoices_{user_name}_{start_date}_to_{end_date}.csv"})
+    except Exception as e:
+        logger.error(f"Error exporting invoices to CSV for user {user_name}: {e}")
+        raise HTTPException(status_code=500, detail="Could not export invoices to CSV.")
 
 @app.delete("/api/invoice/{invoice_id}")
 async def delete_invoice(invoice_id: str):
