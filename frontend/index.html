@@ -6,6 +6,8 @@
       name="google-signin-client_id"
       content="YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
     <title>Invoice Management</title>
     <style>
       :root {
@@ -437,7 +439,10 @@
             </div>
             <div class="form-group">
               <label for="edit-extracted-text">Extracted Text</label>
-              <textarea id="edit-extracted-text" rows="6" style="width: 100%; font-family: monospace;"></textarea>
+              <textarea
+                id="edit-extracted-text"
+                rows="6"
+                style="width: 100%; font-family: monospace"></textarea>
             </div>
             <button type="submit" class="btn btn-primary">Save Invoice</button>
           </form>
@@ -829,10 +834,26 @@
           .getContext("2d")
           .drawImage(cameraView, 0, 0, canvas.width, canvas.height);
         stopCamera();
-        canvas.toBlob(async (blob) => {
-          capturedBlob = blob;
-          await processAndUploadFile(capturedBlob);
-        }, "image/jpeg");
+
+        const imgData = canvas.toDataURL("image/jpeg", 0.9);
+        const { jsPDF } = window.jspdf;
+
+        // Create a PDF that matches the image dimensions
+        // jsPDF uses points (72 per inch), so we need to convert pixels
+        const pdf = new jsPDF({
+          orientation: canvas.width > canvas.height ? "l" : "p",
+          unit: "px",
+          format: [canvas.width, canvas.height],
+        });
+
+        pdf.addImage(imgData, "JPEG", 0, 0, canvas.width, canvas.height);
+        const pdfBlob = pdf.getBlob();
+
+        // Create a File object from the Blob
+        const pdfFile = new File([pdfBlob], "capture.pdf", {
+          type: "application/pdf",
+        });
+        processAndUploadFile(pdfFile);
       });
 
       // Export functionality

@@ -2,3 +2,4 @@
 __pycache__
 .env
 my-poc-94663-service-account.json
+client_secret_google.json
