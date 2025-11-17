@@ -157,39 +157,74 @@ async def upload_invoice(
         blob = bucket.blob(storage_key)
         blob.upload_from_string(content, content_type=file.content_type)
         sanitized_filename = sanitize_filename(file.filename)
+
         if sanitized_filename != file.filename:
             logging.warning(f"Filename sanitized from '{file.filename}' to '{sanitized_filename}'")
 
-        # File Upload Validation and Handling
-        if file.content_type != "application/pdf":
-            raise FileHandlingError("Only PDF files are supported.")
-        # Extract text (simple version - use Google Vision API for production)
-        tmp_path = None
-        extracted_data  = ""
-        try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                await file.seek(0)  # Reset file pointer to the beginning
-                shutil.copyfileobj(file.file, tmp)
-                tmp_path = tmp.name
+        extracted_data = ""
+        if file.content_type == "application/pdf":
+            # Extract text from PDF
+            tmp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                    await file.seek(0)
+                    shutil.copyfileobj(file.file, tmp)
+                    tmp_path = tmp.name
                 extracted_data = extract_invoice_using_pypdf(tmp_path)
-                print("Extracted Data:", extracted_data)  # Debugging line
-        except Exception as e:
-            raise FileHandlingError(f"Error saving uploaded file: {e}")
-        finally:
-            # Clean up temp file
-            if tmp_path and os.path.exists(tmp_path):
-                os.unlink(tmp_path)
-        
+            except Exception as e:
+                raise FileHandlingError(f"Error processing PDF file: {e}")
+            finally:
+                if tmp_path and os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+        elif file.content_type in ["image/jpeg", "image/png", "image/jpg"]:
+            # Extract text from Image using external API
+            try:
+                # We need to await the read of the file content before passing it to the synchronous `requests` library.
+                await file.seek(0)
+                image_content = await file.read()
+                files = {'file': (file.filename, image_content, file.content_type)}
+                data = {'model': 'extraction_system'}
+                response = requests.post(
+                    "https://invoice-extraction-image-69110340592.asia-south1.run.app/extract",
+                    data=data,
+                    files=files
+                )
+                response.raise_for_status()
+                extracted_data = response.json()
+            except requests.exceptions.RequestException as e:
+                raise FileHandlingError(f"Error calling extraction API: {e}")
+        else:
+            raise FileHandlingError("Unsupported file type. Please upload a PDF or an image (JPEG, PNG).")
+        print("Extracted Data:", json.dumps(extracted_data))  # Debugging line
         # Auto-categorize
-        category = categorize_invoice(extracted_data)
-        amount = extract_amount(extracted_data) or 0.0
-        
+        category = ""
+        amount = 0.0
+        text_for_analysis = ""
+
+        if isinstance(extracted_data, str):
+            text_for_analysis = extracted_data
+        elif isinstance(extracted_data, dict):
+            # Try to find a total amount directly from the structured data
+            # This is a simplistic example; you might need to iterate through the dict
+            # to find the correct total amount field.
+            for key, value in extracted_data.items():
+                if isinstance(value, dict) and 'total_amount' in value and value['total_amount']:
+                    amount = float(value['total_amount'])
+                    break
+            # Convert dict to string for text-based categorization
+            text_for_analysis = json.dumps(extracted_data)
+
+        category = categorize_invoice(text_for_analysis)
+        if amount == 0.0: # If not found in structured data, try extracting from text
+            amount = extract_amount(text_for_analysis)
+
         # Store metadata in database
         await execute_query(
             "INSERT INTO users (name, created_at) VALUES (%s, %s) ON CONFLICT (name) DO NOTHING",
             [user_name]
         )
-        
+        if isinstance(extracted_data, dict):
+            extracted_data = json.dumps(extracted_data)
         # Insert invoice record
         await execute_query("""
             INSERT INTO invoices 
@@ -207,7 +242,7 @@ async def upload_invoice(
             "amount": amount,
             "file_name": file.filename,
             "storage_key": storage_key,
-            "extracted_text": extracted_data,
+            "extracted_data": extracted_data if isinstance(extracted_data, dict) else json.loads(extracted_data),
             "message": "Invoice uploaded and categorized successfully"
         })
         

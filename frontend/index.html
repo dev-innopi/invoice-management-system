@@ -667,9 +667,11 @@
       });
 
       async function processAndUploadFile(file) {
+        const fileName = file.name || `capture-${Date.now()}.jpg`;
+
         const formData = new FormData();
         formData.append("user_name", currentUser);
-        formData.append("file", file, file.name || "capture.jpg");
+        formData.append("file", file, fileName);
 
         const submitButton = uploadForm.querySelector('button[type="submit"]');
         submitButton.disabled = true;
@@ -701,7 +703,9 @@
           ? parseFloat(data.amount).toFixed(2)
           : "";
         document.getElementById("edit-extracted-text").value =
-          data.extracted_text || "No text could be extracted.";
+          data.extracted_data
+            ? JSON.stringify(data.extracted_data)
+            : "No text could be extracted.";
         editInvoiceModal.style.display = "block";
       }
 
@@ -799,7 +803,14 @@
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
           try {
             cameraStream = await navigator.mediaDevices.getUserMedia({
-              video: { facingMode: "environment" },
+              video: {
+                facingMode: "environment",
+                advanced: [
+                  {
+                    focusMode: "continuous",
+                  },
+                ],
+              },
             });
             cameraView.srcObject = cameraStream;
             cameraModal.style.display = "block";
@@ -835,25 +846,14 @@
           .drawImage(cameraView, 0, 0, canvas.width, canvas.height);
         stopCamera();
 
-        const imgData = canvas.toDataURL("image/jpeg", 0.9);
-        const { jsPDF } = window.jspdf;
-
-        // Create a PDF that matches the image dimensions
-        // jsPDF uses points (72 per inch), so we need to convert pixels
-        const pdf = new jsPDF({
-          orientation: canvas.width > canvas.height ? "l" : "p",
-          unit: "px",
-          format: [canvas.width, canvas.height],
-        });
-
-        pdf.addImage(imgData, "JPEG", 0, 0, canvas.width, canvas.height);
-        const pdfBlob = pdf.getBlob();
-
-        // Create a File object from the Blob
-        const pdfFile = new File([pdfBlob], "capture.pdf", {
-          type: "application/pdf",
-        });
-        processAndUploadFile(pdfFile);
+        canvas.toBlob(
+          function (blob) {
+            const imageFile = new File([blob], null, { type: "image/jpeg" });
+            processAndUploadFile(imageFile);
+          },
+          "image/jpeg",
+          0.9
+        );
       });
 
       // Export functionality
