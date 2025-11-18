@@ -94,42 +94,33 @@ def categorize_invoice(text: str) -> str:
     
     return "Miscellaneous"
 
-def extract_amount(text: str) -> Optional[float]:
-    """Extract amount from invoice text"""
-    patterns = [
-        # Look for keywords like 'total', 'amount', 'balance' followed by a number.
-        # This pattern is more flexible with currency symbols and number formats.
-        r'(?:total|amount|balance|subtotal)[\s:]*[$₹]?\s*([\d,]+\.\d{2})',
-        # A more generic pattern to find monetary values, often the largest on the invoice.
-        r'[$₹]?\s*(\d{1,3}(?:,\d{2,3})*\.\d{2})'
-    ]
-    
-    found_amounts = []
-    for pattern in patterns:
-        # Find all occurrences matching the pattern
-        matches = re.findall(pattern, text.lower())
-        for amount_str in matches:
-            # Clean and convert to float
-            cleaned_amount = float(amount_str.replace(',', ''))
-            found_amounts.append(cleaned_amount)
-    # Return the largest amount found, as it's often the total.
-    return max(found_amounts) if found_amounts else None
+def extract_amount(data: dict) -> Optional[float]:
+    """
+    Extracts the total amount from the invoice's extracted data.
 
-from pypdf import PdfReader
-def extract_invoice_using_pypdf(file_path:str):
+    It navigates through the nested dictionary structure returned by the
+    extraction service. The key under 'extracted_data' (e.g., '325') is dynamic,
+    so we iterate through its values.
+
+    It prioritizes 'Total Taxable Value' from 'other_data', and falls back to
+    'total_amount' if the former is not available.
+    """
     try:
-        reader = PdfReader(file_path)
-        number_of_pages = len(reader.pages)
-        text = ""
-        print("Number of pages in PDF:", number_of_pages)
-        for i in range(number_of_pages):
-            page = reader.pages[i]
-            text += page.extract_text()
-        print("Extracted Text:", text)  # Debugging line
-        return text
-    except Exception as e:
-        logger.error(f"Error extracting resume using pypdf: {e}")
-        raise ValueError(f"An error occurred while extracting resume data using pypdf: {str(e)}")
+        extracted_data = data.get("extracted_data")
+        if not isinstance(extracted_data, dict):
+            return 0.0
+
+        for invoice_details in extracted_data.values():
+            if isinstance(invoice_details, dict):
+                other_data = invoice_details.get("other_fields", {}).get("other_data", {})
+                if isinstance(other_data, dict):
+                    amount = other_data.get("Grand Total") if other_data.get("Grand Total") is not None else other_data.get("Total Taxable Value")
+                    if amount is not None:
+                        return amount
+    except (AttributeError, TypeError, ValueError) as e:
+        logging.warning(f"Could not extract amount from data: {e}")
+    return 0.0
+
 def sanitize_filename(filename: str) -> str:
     """Removes potentially harmful characters from filename."""
     return "".join(c for c in filename if c.isalnum() or c in ['.', '_', '-'])
@@ -164,28 +155,15 @@ async def upload_invoice(
             logging.warning(f"Filename sanitized from '{file.filename}' to '{sanitized_filename}'")
 
         extracted_data = ""
-        if file.content_type == "application/pdf":
-            # Extract text from PDF
-            tmp_path = None
+        if file.content_type in ["application/pdf", "image/jpeg", "image/png", "image/jpg"]:
+            # Extract text from PDF or Image using external API
             try:
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                    await file.seek(0)
-                    shutil.copyfileobj(file.file, tmp)
-                    tmp_path = tmp.name
-                extracted_data = extract_invoice_using_pypdf(tmp_path)
-            except Exception as e:
-                raise FileHandlingError(f"Error processing PDF file: {e}")
-            finally:
-                if tmp_path and os.path.exists(tmp_path):
-                    os.unlink(tmp_path)
-        elif file.content_type in ["image/jpeg", "image/png", "image/jpg"]:
-            # Extract text from Image using external API
-            try:
-                # We need to await the read of the file content before passing it to the synchronous `requests` library.
                 await file.seek(0)
-                image_content = await file.read()
-                files = {'file': (file.filename, image_content, file.content_type)}
+                file_content = await file.read()
+                files = {'file': (file.filename, file_content, file.content_type)}
                 data = {'model': 'extraction_system'}
+                
+                # Call the external extraction service
                 response = requests.post(
                     "https://invoice-extraction-image-69110340592.asia-south1.run.app/extract",
                     data=data,
@@ -201,6 +179,7 @@ async def upload_invoice(
         # Auto-categorize
         category = ""
         amount = 0.0
+        trader_name = None
         text_for_analysis = ""
 
         if isinstance(extracted_data, str):
@@ -217,24 +196,34 @@ async def upload_invoice(
             text_for_analysis = json.dumps(extracted_data)
 
         category = categorize_invoice(text_for_analysis)
-        if amount == 0.0: # If not found in structured data, try extracting from text
-            amount = extract_amount(text_for_analysis)
+        
+        # Correctly extract trader_name from the nested structure
+        if isinstance(extracted_data, dict) and 'extracted_data' in extracted_data and isinstance(extracted_data['extracted_data'], dict):
+            inner_data = extracted_data['extracted_data']
+            # The key (like "325") is dynamic, so we iterate through the values.
+            for key, value in inner_data.items():
+                if isinstance(value, dict) and 'vendor' in value:
+                    trader_name = value.get('vendor')
+                    if trader_name:
+                        break # Found it, no need to look further
+        amount = extract_amount(extracted_data)
 
         # Store metadata in database
         await execute_query(
             "INSERT INTO users (name, created_at) VALUES (%s, %s) ON CONFLICT (name) DO NOTHING",
             [user_name, datetime.now()]
         )
-        if isinstance(extracted_data, dict):
-            extracted_data = json.dumps(extracted_data)
+        # Convert extracted_data to a JSON string if it's a dict, to store in a text/jsonb column.
+        db_extracted_text = json.dumps(extracted_data) if isinstance(extracted_data, dict) else extracted_data
+
         # Insert invoice record
         await execute_query("""
             INSERT INTO invoices 
-            (id, user_name, file_name, storage_key, category, amount, upload_date, extracted_text)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            (id, user_name, file_name, storage_key, category, amount, upload_date, extracted_text, trader_name)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, [
-            invoice_id, user_name, file.filename, storage_key, category, 
-            amount, datetime.now(), extracted_data]
+            invoice_id, user_name, file.filename, storage_key, category,
+            amount, datetime.now(), db_extracted_text, trader_name]
         )
         
         return JSONResponse({
@@ -242,9 +231,10 @@ async def upload_invoice(
             "invoice_id": invoice_id,
             "category": category,
             "amount": amount,
+            "trader_name": trader_name,
             "file_name": file.filename,
             "storage_key": storage_key,
-            "extracted_data": extracted_data if isinstance(extracted_data, str) else json.loads(extracted_data),
+            "extracted_data": extracted_data,
             "message": "Invoice uploaded and categorized successfully"
         })
         
@@ -255,7 +245,7 @@ async def upload_invoice(
 async def get_user_invoices(user_name: str):
     try:
         invoices = await fetch_query_results("""
-            SELECT id, file_name, category, amount, upload_date, storage_key
+            SELECT id, file_name, category, amount, upload_date, storage_key, comment, trader_name
             FROM invoices 
             WHERE user_name = %s 
             ORDER BY upload_date DESC
@@ -275,9 +265,10 @@ class InvoiceUpdateRequest(BaseModel):
     file_name: str
     storage_key: str
     category: str
+    trader_name: Optional[str] = None
     amount: float
     extracted_text: Optional[str] = None
-
+    comment: Optional[str] = None
 @app.post("/api/invoices")
 async def save_invoice_details(invoice_data: InvoiceUpdateRequest):
     """
@@ -287,11 +278,11 @@ async def save_invoice_details(invoice_data: InvoiceUpdateRequest):
         # The storage_key is unique per upload, so we use it to find the correct invoice.
         result = await execute_query("""
             UPDATE invoices 
-            SET category = %s, amount = %s, extracted_text = %s
+            SET category = %s, amount = %s, extracted_text = %s, comment = %s, trader_name = %s
             WHERE storage_key = %s AND user_name ~~* %s
             RETURNING id;
         """, [
-            invoice_data.category, invoice_data.amount, invoice_data.extracted_text,
+            invoice_data.category, invoice_data.amount, invoice_data.extracted_text, invoice_data.comment, invoice_data.trader_name,
             invoice_data.storage_key, f"%{invoice_data.user_name}%"
         ])
         print(f"Update result: {result}")

@@ -435,6 +435,17 @@
               <input type="text" id="edit-category" required />
             </div>
             <div class="form-group">
+              <label for="edit-trader-name">Trader/Manufacturer Name</label>
+              <input type="text" id="edit-trader-name" />
+            </div>
+            <div class="form-group">
+              <label for="edit-comment">Comment</label>
+              <textarea
+                id="edit-comment"
+                rows="3"
+                style="width: 100%"></textarea>
+            </div>
+            <div class="form-group">
               <label for="edit-amount">Amount (Rs)</label>
               <input type="text" id="edit-amount" required />
             </div>
@@ -533,7 +544,7 @@
           const stats = await response.json();
 
           totalInvoicesEl.textContent = stats.total_invoices;
-          totalAmountEl.textContent = parseFloat(stats.total_amount).toFixed(2);
+          totalAmountEl.textContent = stats.total_amount;
 
           statsListEl.innerHTML = "";
           if (stats.category_breakdown.length > 0) {
@@ -572,11 +583,13 @@
                         <span class="invoice-meta">Category: ${
                           invoice.category
                         } &bull; Uploaded: ${uploadDate}</span>
+                         <span class="invoice-meta">Comment: ${
+                           invoice.comment
+                         }</span>
                     </div>
                     <div class="invoice-actions">
-                        <span class="invoice-amount">Rs ${parseFloat(
-                          invoice.amount
-                        ).toFixed(2)}</span>
+                        <span class="invoice-amount">Rs ${
+                          invoice.amount}</span>
                         <button class="btn-secondary btn-download" data-id="${
                           invoice.id
                         }">Download</button>
@@ -697,6 +710,9 @@
         document.getElementById("edit-file-name").value = data.file_name;
         document.getElementById("edit-storage-key").value = data.storage_key;
         document.getElementById("edit-category").value = data.category || "";
+        document.getElementById("edit-trader-name").value =
+          data.trader_name || ""; // Populate trader name
+        document.getElementById("edit-comment").value = ""; // Start with an empty comment
         document.getElementById("edit-amount").value = data.amount
           ? parseFloat(data.amount).toFixed(2)
           : "";
@@ -718,7 +734,9 @@
           file_name: document.getElementById("edit-file-name").value,
           storage_key: document.getElementById("edit-storage-key").value,
           category: document.getElementById("edit-category").value,
-          amount: parseFloat(document.getElementById("edit-amount").value),
+          trader_name: document.getElementById("edit-trader-name").value,
+          comment: document.getElementById("edit-comment").value,
+          amount: document.getElementById("edit-amount").value,
           extracted_text: document.getElementById("edit-extracted-text").value,
         };
 
