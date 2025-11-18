@@ -81,45 +81,99 @@ CATEGORIES = {
 @app.get("/")
 async def root(request:Request):
     return templates.TemplateResponse("index.html", {"request": {}})
-def categorize_invoice(text: str) -> str:
+def categorize_invoice(text: dict) -> str:
     """Automatically categorize invoice based on content"""
-    text_lower = text.lower()
-    
+    searchable_text = ""
+    if isinstance(text, str):
+        searchable_text = text.lower()
+    elif isinstance(text, dict):
+        # If it's a dictionary, build a string from relevant fields.
+        # This is more efficient than dumping the whole JSON to a string.
+        all_text = []
+        # Using a recursive function to extract all string values from the dict
+        def extract_values(d):
+            for v in d.values():
+                if isinstance(v, str):
+                    all_text.append(v)
+                elif isinstance(v, dict):
+                    extract_values(v)
+                elif isinstance(v, list):
+                    for i in v:
+                        if isinstance(i, dict):
+                            extract_values(i)
+        extract_values(text)
+        searchable_text = " ".join(all_text).lower()
+
     for category, keywords in CATEGORIES.items():
         if category == "Miscellaneous":
             continue
         for keyword in keywords:
-            if keyword in text_lower:
+            if keyword in searchable_text:
                 return category
     
     return "Miscellaneous"
 
-def extract_amount(data: dict) -> Optional[float]:
+def extract_amount(data: dict) -> float:
     """
     Extracts the total amount from the invoice's extracted data.
-
-    It navigates through the nested dictionary structure returned by the
-    extraction service. The key under 'extracted_data' (e.g., '325') is dynamic,
-    so we iterate through its values.
-
-    It prioritizes 'Total Taxable Value' from 'other_data', and falls back to
-    'total_amount' if the former is not available.
+    It prioritizes 'Grand Total' from 'other_data'. If not available or not a valid number,
+    it calculates the sum of 'total' from all line items.
     """
     try:
         extracted_data = data.get("extracted_data")
         if not isinstance(extracted_data, dict):
             return 0.0
 
+        total_from_line_items = 0.0
+
         for invoice_details in extracted_data.values():
             if isinstance(invoice_details, dict):
+                # 1. Prioritize "Grand Total"
                 other_data = invoice_details.get("other_fields", {}).get("other_data", {})
                 if isinstance(other_data, dict):
-                    amount = other_data.get("Grand Total") if other_data.get("Grand Total") is not None else other_data.get("Total Taxable Value")
-                    if amount is not None:
-                        return amount
+                    grand_total = other_data.get("Grand Total")
+                    if grand_total is not None:
+                        try:
+                            return float(grand_total)
+                        except (ValueError, TypeError):
+                            logging.warning(f"Could not convert Grand Total '{grand_total}' to float.")
+
+                # 2. Fallback: Sum line item totals
+                line_items = invoice_details.get("line_items", [])
+                if isinstance(line_items, list):
+                    for item in line_items:
+                        if isinstance(item, dict) and 'total' in item and item['total'] is not None:
+                            total_from_line_items += float(item['total'])
+                    return total_from_line_items
+
     except (AttributeError, TypeError, ValueError) as e:
         logging.warning(f"Could not extract amount from data: {e}")
     return 0.0
+
+def extract_trader_name(data: dict) -> Optional[str]:
+    """
+    Extracts the trader/vendor name from the invoice's extracted data.
+    It prioritizes the 'vendor' field. If not available or empty, it falls back to
+    'Name_BillTo' from the 'other_data' section.
+    """
+    try:
+        extracted_data = data.get("extracted_data")
+        if not isinstance(extracted_data, dict):
+            return None
+
+        for invoice_details in extracted_data.values():
+            if isinstance(invoice_details, dict):
+                # 1. Prioritize 'vendor' field
+                vendor_name = invoice_details.get("vendor")
+                if vendor_name and isinstance(vendor_name, str) and vendor_name.strip():
+                    return vendor_name
+
+                # 2. Fallback to 'Name_BillTo'
+                other_data = invoice_details.get("other_fields", {}).get("other_data", {})
+                return other_data.get("Name_BillTo")
+    except (AttributeError, TypeError) as e:
+        logging.warning(f"Could not extract trader name from data: {e}")
+    return None
 
 def sanitize_filename(filename: str) -> str:
     """Removes potentially harmful characters from filename."""
@@ -178,39 +232,17 @@ async def upload_invoice(
         print("Extracted Data:", json.dumps(extracted_data))  # Debugging line
         # Auto-categorize
         category = ""
-        amount = 0.0
-        trader_name = None
         text_for_analysis = ""
 
-        if isinstance(extracted_data, str):
-            text_for_analysis = extracted_data
-        elif isinstance(extracted_data, dict):
-            # Try to find a total amount directly from the structured data
-            # This is a simplistic example; you might need to iterate through the dict
-            # to find the correct total amount field.
-            for key, value in extracted_data.items():
-                if isinstance(value, dict) and 'total_amount' in value and value['total_amount']:
-                    amount = float(value['total_amount'])
-                    break
-            # Convert dict to string for text-based categorization
-            text_for_analysis = json.dumps(extracted_data)
-
-        category = categorize_invoice(text_for_analysis)
-        
-        # Correctly extract trader_name from the nested structure
-        if isinstance(extracted_data, dict) and 'extracted_data' in extracted_data and isinstance(extracted_data['extracted_data'], dict):
-            inner_data = extracted_data['extracted_data']
-            # The key (like "325") is dynamic, so we iterate through the values.
-            for key, value in inner_data.items():
-                if isinstance(value, dict) and 'vendor' in value:
-                    trader_name = value.get('vendor')
-                    if trader_name:
-                        break # Found it, no need to look further
         amount = extract_amount(extracted_data)
+        trader_name = extract_trader_name(extracted_data)
+        text_for_analysis = json.dumps(extracted_data)
+        category = categorize_invoice(text_for_analysis)
 
+        logger.info("final amount: {}".format(amount))
         # Store metadata in database
         await execute_query(
-            "INSERT INTO users (name, created_at) VALUES (%s, %s) ON CONFLICT (name) DO NOTHING",
+            "INSERT INTO users (name, created_at) VALUES (%s, %s)",
             [user_name, datetime.now()]
         )
         # Convert extracted_data to a JSON string if it's a dict, to store in a text/jsonb column.

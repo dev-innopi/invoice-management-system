@@ -30,11 +30,10 @@
       }
 
       .container {
-        width: 100%;
         max-width: 900px;
         margin: 20px auto;
-        max-width: 900px;
-        margin: 20px;
+        padding: 0 20px;
+        box-sizing: border-box;
       }
 
       .card {
@@ -357,11 +356,11 @@
           <h2>Upload New Invoice</h2>
           <form id="upload-form">
             <div class="form-group">
-              <label for="invoice-file">Select PDF Invoice</label>
+              <label for="invoice-file">Select Invoice File (PDF/Image)</label>
               <input
                 type="file"
                 id="invoice-file"
-                accept="application/pdf"
+                accept="application/pdf,image/jpeg,image/png,image/jpg"
                 required />
             </div>
             <button type="submit" class="btn btn-primary">
@@ -577,27 +576,14 @@
           const uploadDate = new Date(invoice.upload_date).toLocaleDateString();
           li.innerHTML = `
                     <div class="invoice-details">
-                        <span class="invoice-filename">${
-                          invoice.file_name
-                        }</span>
-                        <span class="invoice-meta">Category: ${
-                          invoice.category
-                        } &bull; Uploaded: ${uploadDate}</span>
-                         <span class="invoice-meta">Comment: ${
-                           invoice.comment
-                         }</span>
+                        <span class="invoice-filename">${invoice.file_name}</span>
+                        <span class="invoice-meta">Category: ${invoice.category} &bull; Uploaded: ${uploadDate}</span>
+                         <span class="invoice-meta">Comment: ${invoice.comment}</span>
                     </div>
                     <div class="invoice-actions">
-                        <span class="invoice-amount">Rs ${
-                          invoice.amount}</span>
-                        <button class="btn-secondary btn-download" data-id="${
-                          invoice.id
-                        }">Download</button>
-                        <button class="btn-danger" data-id="${
-                          invoice.id
-                        }" data-storage-key="${
-            invoice.storage_key
-          }">Delete</button>
+                        <span class="invoice-amount">Rs ${invoice.amount}</span>
+                        <button class="btn-secondary btn-download" data-id="${invoice.id}">Download</button>
+                        <button class="btn-danger" data-id="${invoice.id}" data-storage-key="${invoice.storage_key}">Delete</button>
                     </div>
                 `;
           invoiceList.appendChild(li);
