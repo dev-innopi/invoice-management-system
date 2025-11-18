@@ -23,7 +23,8 @@ from pydantic import BaseModel
 import csv
 import shutil
 from fastapi.templating import Jinja2Templates
-
+import os 
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 templates = Jinja2Templates(directory="frontend")
 logger = logging.getLogger(__name__)
 
@@ -222,7 +223,7 @@ async def upload_invoice(
         # Store metadata in database
         await execute_query(
             "INSERT INTO users (name, created_at) VALUES (%s, %s) ON CONFLICT (name) DO NOTHING",
-            [user_name]
+            [user_name, datetime.now()]
         )
         if isinstance(extracted_data, dict):
             extracted_data = json.dumps(extracted_data)
@@ -243,7 +244,7 @@ async def upload_invoice(
             "amount": amount,
             "file_name": file.filename,
             "storage_key": storage_key,
-            "extracted_data": extracted_data if isinstance(extracted_data, dict) else json.loads(extracted_data),
+            "extracted_data": extracted_data if isinstance(extracted_data, str) else json.loads(extracted_data),
             "message": "Invoice uploaded and categorized successfully"
         })
         
@@ -462,22 +463,27 @@ async def delete_invoice(invoice_id: str):
 @app.get("/api/google-consent-url")
 async def google_consent_url():
     try:
-        redirect_uri = 'http://127.0.0.1:8000/api/google-callback'
+        redirect_uri = 'https://invoice-management-system-69110340592.asia-south1.run.app/api/google-callback'
         # Generate Google OAuth2 consent URL
         from google_auth_oauthlib.flow import Flow
 
         flow = Flow.from_client_secrets_file(
             'client_secret_google.json',
-            scopes=['https://www.googleapis.com/auth/cloud-platform', "https://www.googleapis.com/auth/userinfo.profile"],
+            scopes=[
+                'https://www.googleapis.com/auth/cloud-platform', 
+                "https://www.googleapis.com/auth/userinfo.profile",
+                "https://www.googleapis.com/auth/userinfo.email",
+                "openid"
+            ],
             redirect_uri=redirect_uri
         )
 
         authorization_url, state = flow.authorization_url(
-            access_type='offline',
+            access_type='online',
             include_granted_scopes='true'
         )
 
-        return JSONResponse({"consent_url": authorization_url})
+        return JSONResponse({"consent_url": authorization_url, "state": state})
     except Exception as e:
         logger.error(f"Error generating Google consent URL: {e}")
         raise HTTPException(status_code=500, detail="Could not generate consent URL.")
@@ -490,10 +496,15 @@ async def google_callback(request: Request):
         # print(f"Google Callback Data: {json.dumps(request)}")
         data = request.query_params
         print(f"Google Callback Data:", data)
-        redirect_uri = 'http://127.0.0.1:8000/api/google-callback'
+        redirect_uri = 'https://invoice-management-system-69110340592.asia-south1.run.app/api/google-callback'
         flow = Flow.from_client_secrets_file(
             'client_secret_google.json',
-            scopes=['https://www.googleapis.com/auth/cloud-platform', "https://www.googleapis.com/auth/userinfo.profile"],
+            scopes=[
+                'https://www.googleapis.com/auth/cloud-platform', 
+                "https://www.googleapis.com/auth/userinfo.profile",
+                "https://www.googleapis.com/auth/userinfo.email",
+                "openid"
+            ],
             state=data.get('state'))
         flow.redirect_uri = redirect_uri
 

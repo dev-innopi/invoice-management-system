@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta
       name="google-signin-client_id"
-      content="YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com" />
+      content="257598764664-k5m3ug4tnjmuosmln4bf9godihrmrlc5.apps.googleusercontent.com" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
@@ -27,14 +27,12 @@
         margin: 0;
         background-color: var(--secondary-color);
         color: var(--text-color);
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        min-height: 100vh;
       }
 
       .container {
         width: 100%;
+        max-width: 900px;
+        margin: 20px auto;
         max-width: 900px;
         margin: 20px;
       }
@@ -44,6 +42,9 @@
         border-radius: 8px;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         padding: 30px;
+      }
+      #login-page {
+        padding-top: 5vh;
       }
 
       /* Login Page */
@@ -470,7 +471,8 @@
       </div>
     </div>
     <script>
-      const API_BASE_URL = "http://localhost:8000";
+      const API_BASE_URL =
+        "https://invoice-management-system-69110340592.asia-south1.run.app";
 
       const loginPage = document.getElementById("login-page");
       const appPage = document.getElementById("app-page");
@@ -515,9 +517,7 @@
 
       async function fetchInvoices(username) {
         try {
-          const response = await fetch(
-            `${API_BASE_URL}/api/invoices/${username}`
-          );
+          const response = await fetch(`/api/invoices/${username}`);
           if (!response.ok) throw new Error("Failed to fetch invoices.");
           const data = await response.json();
           renderInvoices(data.invoices);
@@ -528,7 +528,7 @@
 
       async function fetchStats(username) {
         try {
-          const response = await fetch(`${API_BASE_URL}/api/stats/${username}`);
+          const response = await fetch(`/api/stats/${username}`);
           if (!response.ok) throw new Error("Failed to fetch stats.");
           const stats = await response.json();
 
@@ -636,9 +636,7 @@
         .getElementById("google-signin-btn")
         .addEventListener("click", async () => {
           try {
-            const response = await fetch(
-              `${API_BASE_URL}/api/google-consent-url`
-            );
+            const response = await fetch(`/api/google-consent-url`);
             if (!response.ok) {
               const errorData = await response.json();
               throw new Error(
@@ -725,7 +723,7 @@
         };
 
         try {
-          const response = await fetch(`${API_BASE_URL}/api/invoices`, {
+          const response = await fetch(`/api/invoices`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
@@ -755,12 +753,9 @@
           const invoiceId = e.target.dataset.id;
           if (confirm("Are you sure you want to delete this invoice?")) {
             try {
-              const response = await fetch(
-                `${API_BASE_URL}/api/invoice/${invoiceId}`,
-                {
-                  method: "DELETE",
-                }
-              );
+              const response = await fetch(`/api/invoice/${invoiceId}`, {
+                method: "DELETE",
+              });
               const result = await response.json();
               if (!response.ok)
                 throw new Error(result.detail || "Failed to delete.");
@@ -776,9 +771,7 @@
           e.target.disabled = true;
           e.target.textContent = "Preparing...";
           try {
-            const response = await fetch(
-              `${API_BASE_URL}/api/invoice/${invoiceId}/download`
-            );
+            const response = await fetch(`/api/invoice/${invoiceId}/download`);
             const { download_url, file_name } = await response.json();
             if (!response.ok)
               throw new Error(
@@ -867,7 +860,7 @@
           return;
         }
 
-        const url = `${API_BASE_URL}/api/export/csv?user_name=${currentUser}&start_date=${startDate}&end_date=${endDate}`;
+        const url = `/api/export/csv?user_name=${currentUser}&start_date=${startDate}&end_date=${endDate}`;
 
         try {
           const response = await fetch(url);
