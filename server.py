@@ -493,7 +493,6 @@ async def google_consent_url():
         flow = Flow.from_client_secrets_file(
             'client_secret_google.json',
             scopes=[
-                'https://www.googleapis.com/auth/cloud-platform', 
                 "https://www.googleapis.com/auth/userinfo.profile",
                 "https://www.googleapis.com/auth/userinfo.email",
                 "openid"
