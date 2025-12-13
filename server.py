@@ -463,12 +463,12 @@ async def export_invoices_to_csv(
 @app.delete("/api/invoice/{invoice_id}")
 async def delete_invoice(invoice_id: str):
     try:
-        row = await fetch_query_results("SELECT storage_key FROM invoices WHERE id = %s", [invoice_id])
-        
-        if not row:
+        rows = await fetch_query_results("SELECT storage_key FROM invoices WHERE id = %s", [invoice_id])
+
+        if not rows:
             raise HTTPException(status_code=404, detail="Invoice not found")
-        
-        storage_key = row['storage_key']
+
+        storage_key = rows[0]['storage_key']
         
         # Delete from storage
         storage_client = get_storage_client()
@@ -522,7 +522,6 @@ async def google_callback(request: Request):
         flow = Flow.from_client_secrets_file(
             'client_secret_google.json',
             scopes=[
-                'https://www.googleapis.com/auth/cloud-platform', 
                 "https://www.googleapis.com/auth/userinfo.profile",
                 "https://www.googleapis.com/auth/userinfo.email",
                 "openid"
