@@ -5,7 +5,7 @@
     <meta
       name="google-signin-client_id"
       content="257598764664-k5m3ug4tnjmuosmln4bf9godihrmrlc5.apps.googleusercontent.com" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
     <title>Invoice Management</title>
@@ -27,6 +27,12 @@
         margin: 0;
         background-color: var(--secondary-color);
         color: var(--text-color);
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        -khtml-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
       }
 
       .container {
@@ -252,13 +258,269 @@
       }
 
       @media (max-width: 768px) {
+        body {
+          -webkit-text-size-adjust: 100%;
+          -ms-text-size-adjust: 100%;
+          touch-action: manipulation;
+        }
+
+        .container {
+          max-width: 100%;
+          margin: 10px auto;
+          padding: 0 15px;
+        }
+
+        .card {
+          padding: 20px;
+          margin-bottom: 15px;
+        }
+
+        #login-page {
+          padding-top: 2vh;
+        }
+
+        #login-page .card {
+          max-width: 350px;
+          margin: auto;
+          padding: 25px;
+        }
+
+        #app-page header {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 15px;
+          margin-bottom: 20px;
+        }
+
+        #app-page header h1 {
+          font-size: 1.5em;
+        }
+
+        #logout-btn {
+          width: 100%;
+          margin-top: 10px;
+        }
+
         .grid-container {
           grid-template-columns: 1fr;
+          gap: 15px;
         }
+
         #upload-section,
         #stats-section,
+        #export-section,
         #invoices-section {
           grid-column: span 1;
+        }
+
+        input[type="text"],
+        input[type="file"],
+        input[type="date"],
+        textarea {
+          font-size: 16px;
+          padding: 15px;
+          -webkit-appearance: none;
+          appearance: none;
+          border-radius: 8px;
+        }
+
+        .btn {
+          font-size: 16px;
+          padding: 15px 20px;
+          border-radius: 8px;
+          -webkit-appearance: none;
+          appearance: none;
+        }
+
+        .btn-secondary {
+          padding: 10px 15px;
+          font-size: 14px;
+        }
+
+        #invoice-list li {
+          flex-direction: column;
+          align-items: flex-start;
+          padding: 20px;
+          margin-bottom: 15px;
+        }
+
+        .invoice-details {
+          width: 100%;
+          margin-bottom: 15px;
+        }
+
+        .invoice-actions {
+          width: 100%;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .invoice-amount {
+          font-size: 1.2em;
+          margin-bottom: 10px;
+        }
+
+        .modal-content {
+          width: 95%;
+          margin: 10px auto;
+          padding: 15px;
+          max-height: 90vh;
+          overflow-y: auto;
+        }
+
+        #camera-view {
+          width: 100%;
+          height: auto;
+        }
+
+        /* Prevent zoom on input focus for mobile */
+        input:focus,
+        textarea:focus {
+          font-size: 16px;
+          transform-origin: left top;
+          transform: scale(1);
+        }
+
+        /* Allow text selection in inputs */
+        input,
+        textarea {
+          -webkit-user-select: text;
+          -moz-user-select: text;
+          -ms-user-select: text;
+          user-select: text;
+        }
+
+        /* Upload screen mobile optimizations */
+        #upload-section h2 {
+          font-size: 1.3em;
+          margin-bottom: 20px;
+        }
+
+        #upload-section .form-group {
+          margin-bottom: 25px;
+        }
+
+        #upload-section label {
+          font-size: 16px;
+          margin-bottom: 12px;
+        }
+
+        #invoice-file {
+          border: 2px dashed var(--border-color);
+          background-color: #f8f9fa;
+          cursor: pointer;
+          transition: all 0.3s ease;
+        }
+
+        #invoice-file:hover {
+          border-color: var(--primary-color);
+          background-color: #e3f2fd;
+        }
+
+        #upload-form .btn-primary {
+          margin-bottom: 15px;
+          font-weight: 600;
+        }
+
+        #capture-btn {
+          background-color: #28a745;
+          white-space: nowrap;
+        }
+
+        #capture-btn:hover {
+          background-color: #218838;
+        }
+
+        .login-divider {
+          margin: 25px 0;
+        }
+
+        /* Previous invoices screen mobile optimizations */
+        #invoices-section h2 {
+          font-size: 1.3em;
+          margin-bottom: 20px;
+        }
+
+        #invoices-section .card {
+          padding: 20px 15px;
+        }
+
+        #invoice-list {
+          margin-top: 15px;
+        }
+
+        #invoice-list li {
+          border-radius: 12px;
+          background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+          border: 1px solid rgba(0, 0, 0, 0.05);
+        }
+
+        .invoice-filename {
+          font-size: 16px;
+          color: var(--text-color);
+          margin-bottom: 8px;
+          word-break: break-word;
+        }
+
+        .invoice-meta {
+          font-size: 14px;
+          line-height: 1.4;
+          margin-bottom: 4px;
+        }
+
+        .invoice-amount {
+          font-size: 1.3em;
+          font-weight: 700;
+          color: var(--primary-color);
+          text-align: right;
+        }
+
+        .invoice-actions {
+          flex-wrap: wrap;
+          gap: 10px;
+          margin-top: 10px;
+        }
+
+        .btn-secondary,
+        .btn-danger {
+          flex: 1;
+          min-width: 80px;
+          padding: 10px 15px;
+          font-size: 13px;
+          border-radius: 6px;
+        }
+
+        /* Stats section mobile optimizations */
+        #stats-section h2,
+        #export-section h2 {
+          font-size: 1.3em;
+          margin-bottom: 20px;
+        }
+
+        #stats-section p,
+        #export-section p {
+          font-size: 15px;
+          margin-bottom: 15px;
+        }
+
+        #stats-section h3 {
+          font-size: 1.1em;
+          margin-bottom: 15px;
+        }
+
+        #stats-list li {
+          padding: 12px 0;
+          font-size: 14px;
+        }
+
+        #export-form .form-group {
+          margin-bottom: 20px;
+        }
+
+        #export-form label {
+          font-size: 15px;
+          margin-bottom: 10px;
         }
       }
 
